@@ -90,7 +90,7 @@ public enum Meow {
     }
     
     /// The Object Pool instance. For more information, look at the `ObjectPool` documentation.
-    public static let pool = ObjectPool()
+//    public static let pool = ObjectPool()
     
     public static var middleware = [TransactionMiddleware]()
     
@@ -246,7 +246,7 @@ public enum Meow {
             return storage[id]?.instance.value as? M
         }
         
-        /// Stored an entity in the pool
+        /// Stores an entity in the pool
         public func pool<M: _Model>(_ instance: M) {
             objectPoolMutationLock.lock()
             defer { objectPoolMutationLock.unlock() }
@@ -277,7 +277,6 @@ public enum Meow {
             if !invalidatedObjectIds.contains(instance._id) {
                 storage[instance._id] = (instance: Weak(instance), instantiation: Date())
             }
-            
         }
         
         /// Invalidates the given ObjectId. Called when removing an object

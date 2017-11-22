@@ -19,8 +19,8 @@ extension Meow {
     
     /// Validates the integrity of the database and returns an array all problems
     public static func validateDatabaseIntegrity(problemLimit limit: Int = Int.max, types: [_Model.Type]) throws -> [DatabaseProblem] {
-        guard Meow.pool.count == 0 else {
-            throw ValidationError.cannotValidateBecauseOfAliveObjects(objects: Meow.pool.storage.map { $0.1 })
+        guard context.count == 0 else {
+            throw ValidationError.cannotValidateBecauseOfAliveObjects(objects: context.storage.map { $0.1 })
         }
         
         var problems = [DatabaseProblem]()
@@ -32,8 +32,6 @@ extension Meow {
                 count += 1
                 do {
                     let instance = try M.instantiateIfNeeded(document: document)
-                    Meow.pool.ghost(instance)
-                    
                     _ = try M.encoder.encode(instance)
                 } catch {
                     problems.append((M, document["_id"], error))
@@ -46,8 +44,10 @@ extension Meow {
             print("Validated \(count) entries of \(M)")
         }
         
+        context.clean()
+        
         // The pool should be empty again!
-        for (_, instance) in Meow.pool.storage {
+        for (_, instance) in context.storage {
             problems.append((model: type(of: instance.instance.value) as? _Model.Type, id: (instance.instance.value as? _Model)?._id, error: ValidationError.circularReference(stillAlive: instance)))
         }
         

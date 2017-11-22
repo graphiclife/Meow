@@ -69,7 +69,7 @@ public extension Model {
 // MARK: - Saving and updating
 public extension _Model {
     public func save() throws {
-        Meow.pool.pool(self)
+        Meow.Context.current.pool(self)
         
         try self.willSave()
         try Meow.middleware.forEach { try $0.willSave(instance: self) }
@@ -90,7 +90,7 @@ public extension _Model {
     
     // TODO: Maybe this can be a Set<CodingKey> after SR-5215
     public func update(fields: Set<String>) throws {
-        Meow.pool.pool(self)
+        Meow.Context.current.pool(self)
         
         try self.willSave()
         try Meow.middleware.forEach { try $0.willSave(instance: self) }
@@ -127,7 +127,7 @@ public extension _Model {
     public func delete() throws {
         try self.willDelete()
         try Meow.middleware.forEach { try $0.willDelete(instance: self) }
-        Meow.pool.invalidate(self._id)
+        context.invalidate(self._id)
         try Self.collection.remove("_id" == self._id)
         try self.didDelete()
         try Meow.middleware.forEach { try $0.didDelete(instance: self) }
@@ -151,7 +151,7 @@ public extension _Model {
                 }
                 
                 // we have this id in memory, so return that
-                if let instance: Self = Meow.pool.getPooledInstance(withIdentifier: val) {
+                if let instance: Self = context.getPooledInstance(withIdentifier: val) {
                     return AnySequence([instance])
                 }
             }
@@ -162,7 +162,7 @@ public extension _Model {
         
         return AnySequence(try result.flatMap { document in
             do {
-                return try Meow.pool.instantiateIfNeeded(type: Self.self, document: document)
+                return try context.instantiateIfNeeded(type: Self.self, document: document)
             } catch {
                 Meow.log("Initializing from document failed: \(error)")
                 print("Could not initialize \(Self.self) from document\n_id: \(ObjectId(document["_id"])?.hexString ?? document["_id"] ?? "unknown")\nError: \(error)\n")
@@ -278,6 +278,6 @@ public func ==<K>(lhs: K, rhs: BSON.Primitive?) -> ModelQuery<K> {
 // MARK: - Internal Helpers
 extension _Model {
     internal static func instantiateIfNeeded(document: Document) throws -> Self {
-        return try Meow.pool.instantiateIfNeeded(type: Self.self, document: document)
+        return try context.instantiateIfNeeded(type: Self.self, document: document)
     }
 }
