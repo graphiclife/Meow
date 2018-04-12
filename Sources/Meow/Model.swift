@@ -10,39 +10,39 @@ import MongoKitten
 
 /// Private base protocol for `Model` without Self or associated type requirements
 public protocol _Model : class, Codable {
-    
+
     // MARK: - Serialization
-    
+
     /// The `_id` of the model. *This property MUST be encoded with `_id` as key*
     var _id: ObjectId { get set }
-    
+
     /// The collection instances of the model live in. A default implementation is provided.
     static var collection: MongoKitten.Collection { get }
-    
+
     /// The BSON decoder used for decoding instances of this model. A default implementation is provided.
     static var decoder: BSONDecoder { get }
-    
+
     /// The BSON encoder used for encoding instances of this model. A default implementation is provided.
     static var encoder: BSONEncoder { get }
-    
+
     // MARK: - Hooks
-    
+
     /// Will be called before saving the Model. Throwing from here will prevent the model from saving.
     func willSave() throws
-    
+
     /// Will be called when the Model has been saved.
     func didSave() throws
-    
+
     /// Will be called when the Model will be deleted. Throwing from here will prevent the model from being deleted.
     func willDelete() throws
-    
+
     /// Will be called when the Model is deleted. At this point, it is no longer in the database and saves will no longer work because the ObjectId is invalidated.
     func didDelete() throws
-    
+
 }
 
 public protocol Model : _Model {
-    
+
 }
 
 // MARK: - Default implementations
@@ -51,15 +51,15 @@ public extension Model {
         let typeName = String(describing: Self.self)
         return Meow.database[typeName]
     }
-    
+
     static var decoder: BSONDecoder {
         return BSONDecoder()
     }
-    
+
     static var encoder: BSONEncoder {
         return BSONEncoder()
     }
-    
+
     func willSave() throws {}
     func didSave() throws {}
     func willDelete() throws {}
@@ -70,34 +70,34 @@ public extension Model {
 public extension _Model {
     public func save() throws {
         Meow.pool.pool(self)
-        
+
         try self.willSave()
         try Meow.middleware.forEach { try $0.willSave(instance: self) }
-        
+
         let encoder = Self.encoder
         let document = try encoder.encode(self)
-        
+
         try Self.collection.update(
             "_id" == self._id,
            to: document,
            upserting: true,
            stoppingOnError: true
         )
-        
+
         try self.didSave()
         try Meow.middleware.forEach { try $0.didSave(instance: self) }
     }
-    
+
     // TODO: Maybe this can be a Set<CodingKey> after SR-5215
     public func update(fields: Set<String>) throws {
         Meow.pool.pool(self)
-        
+
         try self.willSave()
         try Meow.middleware.forEach { try $0.willSave(instance: self) }
-        
+
         let encoder = Self.encoder
         let document = try encoder.encode(self)
-        
+
         var update = Document()
         for field in fields {
             if let value = document[field] {
@@ -106,20 +106,20 @@ public extension _Model {
                 update["$unset", field] = ""
             }
         }
-        
+
         try Self.collection.update("_id" == self._id,
                                    to: update)
-        
+
         try self.didSave()
         try Meow.middleware.forEach { try $0.didSave(instance: self) }
     }
-    
+
     /// Performs an update operation using the MongoDB $set and $unset operators for the
     /// specified fields
     public func update(fields: String...) throws {
         try self.update(fields: Set(fields))
     }
-    
+
     /// Removes this object from the database
     ///
     /// Before deleting, `willDelete()` is called. `willDelete()` can throw to prevent the deletion.
@@ -140,8 +140,8 @@ public extension _Model {
     ///
     /// - parameter query: The query to compare the database entities with
     /// - parameter sort: The order to sort the entities by
-    public static func find(_ query: Query? = nil, sortedBy sort: Sort? = nil, skipping skip: Int? = nil, limitedTo limit: Int? = nil, withBatchSize batchSize: Int = Meow.defaultBatchSize, allowOptimizing: Bool = true) throws -> AnySequence<Self> {
-        
+    public static func find(_ query: Query? = nil, sortedBy sort: Sort? = nil, projecting projection: Projection? = nil, skipping skip: Int? = nil, limitedTo limit: Int? = nil, withBatchSize batchSize: Int = Meow.defaultBatchSize, allowOptimizing: Bool = true) throws -> AnySequence<Self> {
+
         // Query optimisations
         if allowOptimizing && sort == nil && skip == nil, let aqt = query?.aqt {
             if case .valEquals("_id", let val) = aqt {
@@ -149,17 +149,17 @@ public extension _Model {
                 guard let val = val as? ObjectId else {
                     return AnySequence([])
                 }
-                
+
                 // we have this id in memory, so return that
                 if let instance: Self = Meow.pool.getPooledInstance(withIdentifier: val) {
                     return AnySequence([instance])
                 }
             }
         }
-        
-        let prepared = try Self.prepareQuery(query, sortedBy: sort, skipping: skip, limitedTo: limit)
+
+        let prepared = try Self.prepareQuery(query, sortedBy: sort, projecting: projection, skipping: skip, limitedTo: limit)
         let result = try Self.runPreparedQuery(prepared, batchSize: batchSize)
-        
+
         return AnySequence(try result.flatMap { document in
             do {
                 return try Meow.pool.instantiateIfNeeded(type: Self.self, document: document)
@@ -171,24 +171,24 @@ public extension _Model {
             }
             })
     }
-    
+
     /// Returns the first object matching the query
-    public static func findOne(_ query: Query? = nil, sortedBy sort: Sort? = nil) throws -> Self? {
+    public static func findOne(_ query: Query? = nil, sortedBy sort: Sort? = nil, projecting projection: Projection? = nil) throws -> Self? {
         // TODO: Don't reuse find here because that one does not have proper error reporting
-        return try Self.find(query, sortedBy: sort, limitedTo: 1, withBatchSize: 1).makeIterator().next()
+        return try Self.find(query, sortedBy: sort, projecting: projection, limitedTo: 1, withBatchSize: 1).makeIterator().next()
     }
-    
+
     /// Counts the amount of objects matching the query
     public static func count(_ filter: Query? = nil, limitedTo limit: Int? = nil, skipping skip: Int? = nil) throws -> Int {
         let prepared = try Self.prepareQuery(filter, skipping: skip, limitedTo: limit)
-        
+
         switch prepared {
         case .aggregate(var pipeline):
             pipeline.append(.count(insertedAtKey: "_meowCount"))
             guard let count = Int(try Self.collection.aggregate(pipeline, options: [.cursorOptions(["batchSize": 1])]).next()?["_meowCount"]) else {
                 throw MongoError.internalInconsistency
             }
-            
+
             return count
         case .find(let query, _, let skip, let limit, _):
             return try collection.count(query, limitedTo: limit, skipping: skip)
@@ -210,7 +210,7 @@ internal extension _Model {
             return try Self.collection.find(query, sortedBy: sort, projecting: project, skipping: skip, limitedTo: limit, withBatchSize: batchSize).cursor
         }
     }
-    
+
     /// Prepares a query given a set of parameters. This query can be either a find operation or aggregation pipeline
     ///
     /// - parameter query: The query that is being executed which allows references to be queries, too
@@ -223,9 +223,9 @@ internal extension _Model {
         var pipeline = AggregationPipeline()
         let requirePipeline = false
         let query = query?.makeDocument()
-        
+
         // TODO: Optimize the query here.
-        
+
         if !requirePipeline {
             if let query = query {
                 return .find(query: Query(query), sort: sort, skip: skip, limit: limit, project: projection)
@@ -233,19 +233,19 @@ internal extension _Model {
                 return .find(query: nil, sort: sort, skip: skip, limit: limit, project: projection)
             }
         }
-        
+
         if let sort = sort {
             pipeline.append(.sort(sort))
         }
-        
+
         if let skip = skip {
             pipeline.append(.skip(skip))
         }
-        
+
         if let limit = limit {
             pipeline.append(.limit(limit))
         }
-        
+
         return .aggregate(pipeline)
     }
 }
@@ -254,7 +254,7 @@ internal extension _Model {
 public enum PreparedQuery {
     /// Finds entities using a single-stage normal `find` operation
     case find(query: Query?, sort: Sort?, skip: Int?, limit: Int?, project: Projection?)
-    
+
     /// A complex aggregation pipeline with joins/$lookup stages.
     case aggregate(AggregationPipeline)
 }
@@ -263,7 +263,7 @@ public enum PreparedQuery {
 // TODO: Implement these when SR-5215 is fixed so we can make it a requirement in the Model protocol
 public extension Model {
 //    public func find(_ query: ModelQuery) {
-//        
+//
 //    }
 }
 
