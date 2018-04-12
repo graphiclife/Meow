@@ -190,14 +190,14 @@ public enum Meow {
                 throw Error.missingOrInvalidValue(key: "_id", expected: ObjectId.self, got: document["_id"])
             }
 
-            objectPoolMutationLock.lock()
-            let existingInstance: M? = storage[id]?.instance.value as? M
-            objectPoolMutationLock.unlock()
+//             objectPoolMutationLock.lock()
+//             let existingInstance: M? = storage[id]?.instance.value as? M
+//             objectPoolMutationLock.unlock()
 
-            if let existingInstance = existingInstance {
-//                Meow.log("Returning \(existingInstance) from pool")
-                return existingInstance
-            }
+//             if let existingInstance = existingInstance {
+// //                Meow.log("Returning \(existingInstance) from pool")
+//                 return existingInstance
+//             }
 
             let instantiation: RunningInstantiation = try {
                 objectPoolMutationLock.lock()

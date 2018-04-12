@@ -173,9 +173,9 @@ public extension _Model {
     }
 
     /// Returns the first object matching the query
-    public static func findOne(_ query: Query? = nil, sortedBy sort: Sort? = nil, projecting projection: Projection? = nil) throws -> Self? {
+    public static func findOne(_ query: Query? = nil, sortedBy sort: Sort? = nil, projecting projection: Projection? = nil, allowOptimizing: Bool = true) throws -> Self? {
         // TODO: Don't reuse find here because that one does not have proper error reporting
-        return try Self.find(query, sortedBy: sort, projecting: projection, limitedTo: 1, withBatchSize: 1).makeIterator().next()
+        return try Self.find(query, sortedBy: sort, projecting: projection, limitedTo: 1, withBatchSize: 1, allowOptimizing: allowOptimizing).makeIterator().next()
     }
 
     /// Counts the amount of objects matching the query
